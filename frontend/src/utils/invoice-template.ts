@@ -135,7 +135,11 @@ export function buildWhatsAppMessage(invoice: any, profile: any): string {
   lines.push(`Tanggal: ${formatDateID(invoice.issue_date)}`);
   lines.push(`Jatuh Tempo: ${formatDateID(invoice.due_date)}`);
   lines.push(`Total: ${formatRp(invoice.total)}`);
-  if (profile?.bank_info) {
+  if (invoice.payment_url) {
+    lines.push("");
+    lines.push(`Bayar online (QRIS / VA / e-wallet):`);
+    lines.push(invoice.payment_url);
+  } else if (profile?.bank_info) {
     lines.push("");
     lines.push(`Pembayaran dapat ditransfer ke:`);
     lines.push(profile.bank_info);

@@ -10,6 +10,7 @@ Endpoints (all under /api):
 """
 from __future__ import annotations
 
+import hashlib
 import logging
 import os
 import uuid
@@ -38,6 +39,14 @@ app = FastAPI(title="Faktur Indo API")
 api = APIRouter(prefix="/api")
 
 EMERGENT_AUTH_URL = "https://demobackend.emergentagent.com/auth/v1/env/oauth/session-data"
+
+MIDTRANS_SERVER_KEY = os.environ.get("MIDTRANS_SERVER_KEY", "")
+MIDTRANS_IS_PRODUCTION = os.environ.get("MIDTRANS_IS_PRODUCTION", "false").lower() == "true"
+MIDTRANS_SNAP_URL = (
+    "https://app.midtrans.com/snap/v1/transactions"
+    if MIDTRANS_IS_PRODUCTION
+    else "https://app.sandbox.midtrans.com/snap/v1/transactions"
+)
 
 
 # ---------- Helpers ----------
@@ -129,6 +138,10 @@ class Invoice(BaseModel):
     subtotal: float = 0
     ppn_amount: float = 0
     total: float = 0
+    payment_url: str = ""
+    payment_token: str = ""
+    midtrans_order_id: str = ""
+    midtrans_status: str = ""
     created_at: datetime = Field(default_factory=now_utc)
     updated_at: datetime = Field(default_factory=now_utc)
 
@@ -434,6 +447,162 @@ async def patch_status(invoice_id: str, body: StatusUpdate, user: dict = Depends
 async def delete_invoice(invoice_id: str, user: dict = Depends(get_current_user)):
     await db.invoices.delete_one({"id": invoice_id, "user_id": user["user_id"]})
     return {"ok": True}
+
+
+# ---------- Midtrans Payment Link ----------
+@api.post("/invoices/{invoice_id}/payment-link")
+async def create_payment_link(invoice_id: str, user: dict = Depends(get_current_user)):
+    if not MIDTRANS_SERVER_KEY:
+        raise HTTPException(status_code=503, detail="Midtrans belum dikonfigurasi")
+    inv = await db.invoices.find_one(
+        {"id": invoice_id, "user_id": user["user_id"]}, {"_id": 0}
+    )
+    if not inv:
+        raise HTTPException(status_code=404, detail="Invoice not found")
+    if not inv.get("total") or inv["total"] <= 0:
+        raise HTTPException(status_code=400, detail="Total invoice tidak valid")
+
+    client_info = inv.get("client_snapshot") or {}
+    # Midtrans needs unique order_id per snap call — embed timestamp to allow retry
+    order_id = f"{inv['id']}-{int(datetime.now(timezone.utc).timestamp())}"
+    payload = {
+        "transaction_details": {
+            "order_id": order_id,
+            "gross_amount": int(round(inv["total"])),  # IDR integer
+        },
+        "customer_details": {
+            "first_name": client_info.get("name", "")[:60] or "Pelanggan",
+            "email": client_info.get("email") or "noreply@example.com",
+            "phone": client_info.get("phone") or "",
+        },
+        "item_details": [
+            {
+                "id": f"item-{i}",
+                "name": (it.get("description") or "Item")[:50],
+                "price": int(round((it.get("rate") or 0))),
+                "quantity": int(it.get("quantity") or 1),
+            }
+            for i, it in enumerate(inv.get("items", []))
+            if (it.get("rate") or 0) > 0
+        ],
+    }
+    # Reconcile item_details total with gross_amount (Midtrans requires exact match if items present)
+    items_total = sum(i["price"] * i["quantity"] for i in payload["item_details"])
+    if inv.get("ppn_enabled") and inv.get("ppn_amount"):
+        payload["item_details"].append({
+            "id": "ppn",
+            "name": f"PPN {inv.get('ppn_rate', 11)}%",
+            "price": int(round(inv["ppn_amount"])),
+            "quantity": 1,
+        })
+        items_total += int(round(inv["ppn_amount"]))
+    if items_total != int(round(inv["total"])):
+        # Drop item_details to avoid mismatch (Midtrans allows omitting)
+        payload.pop("item_details", None)
+
+    try:
+        async with httpx.AsyncClient(timeout=20.0) as http:
+            r = await http.post(
+                MIDTRANS_SNAP_URL,
+                json=payload,
+                auth=(MIDTRANS_SERVER_KEY, ""),
+                headers={"Accept": "application/json", "Content-Type": "application/json"},
+            )
+        if r.status_code >= 400:
+            logger.warning("Midtrans error %s: %s", r.status_code, r.text[:400])
+            raise HTTPException(status_code=502, detail=f"Midtrans error: {r.text[:200]}")
+        data = r.json()
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("Midtrans call failed")
+        raise HTTPException(status_code=502, detail=f"Midtrans gagal: {e}")
+
+    token = data.get("token")
+    redirect_url = data.get("redirect_url")
+    if not redirect_url:
+        raise HTTPException(status_code=502, detail="Midtrans tidak mengembalikan link")
+
+    await db.invoices.update_one(
+        {"id": invoice_id},
+        {
+            "$set": {
+                "payment_url": redirect_url,
+                "payment_token": token or "",
+                "midtrans_order_id": order_id,
+                "midtrans_status": "pending",
+                "updated_at": now_utc(),
+            }
+        },
+    )
+    updated = await db.invoices.find_one({"id": invoice_id}, {"_id": 0})
+    return updated
+
+
+@api.post("/midtrans/notification")
+async def midtrans_notification(payload: dict):
+    """Webhook from Midtrans — verify signature and update invoice status."""
+    if not MIDTRANS_SERVER_KEY:
+        raise HTTPException(status_code=503, detail="Midtrans not configured")
+    order_id = payload.get("order_id", "")
+    status_code = payload.get("status_code", "")
+    gross_amount = payload.get("gross_amount", "")
+    signature_key = payload.get("signature_key", "")
+    raw = f"{order_id}{status_code}{gross_amount}{MIDTRANS_SERVER_KEY}"
+    expected = hashlib.sha512(raw.encode("utf-8")).hexdigest()
+    if expected != signature_key:
+        raise HTTPException(status_code=400, detail="Invalid signature")
+
+    # Strip timestamp suffix from order_id to find invoice
+    inv_id = "-".join(order_id.split("-")[:-1]) if "-" in order_id else order_id
+    inv = await db.invoices.find_one({"id": inv_id}, {"_id": 0})
+    if not inv:
+        return {"ok": True}  # ignore unknown orders
+
+    trx_status = payload.get("transaction_status", "")
+    fraud = payload.get("fraud_status", "")
+    new_status = inv["status"]
+    if trx_status in ("capture", "settlement") and fraud in ("accept", ""):
+        new_status = "paid"
+    elif trx_status in ("cancel", "deny", "expire"):
+        new_status = "sent"  # back to unpaid
+    elif trx_status == "pending":
+        pass
+
+    await db.invoices.update_one(
+        {"id": inv_id},
+        {"$set": {"status": new_status, "midtrans_status": trx_status, "updated_at": now_utc()}},
+    )
+    return {"ok": True}
+
+
+# ---------- Invoice Duplicate ----------
+@api.post("/invoices/{invoice_id}/duplicate")
+async def duplicate_invoice(invoice_id: str, user: dict = Depends(get_current_user)):
+    src = await db.invoices.find_one(
+        {"id": invoice_id, "user_id": user["user_id"]}, {"_id": 0}
+    )
+    if not src:
+        raise HTTPException(status_code=404, detail="Invoice not found")
+    nxt = await next_number(user)  # type: ignore
+    new_inv = Invoice(
+        user_id=user["user_id"],
+        number=nxt["number"],
+        client_id=src.get("client_id"),
+        client_snapshot=src.get("client_snapshot", {}),
+        issue_date=now_utc().strftime("%Y-%m-%d"),
+        due_date=(now_utc() + timedelta(days=14)).strftime("%Y-%m-%d"),
+        items=[LineItem(**it) for it in src.get("items", [])],
+        ppn_enabled=src.get("ppn_enabled", False),
+        ppn_rate=src.get("ppn_rate", 11),
+        notes=src.get("notes", ""),
+        status="draft",
+        subtotal=src.get("subtotal", 0),
+        ppn_amount=src.get("ppn_amount", 0),
+        total=src.get("total", 0),
+    )
+    await db.invoices.insert_one(new_inv.dict())
+    return new_inv.dict()
 
 
 @api.get("/")

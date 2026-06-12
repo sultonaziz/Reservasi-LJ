@@ -1,0 +1,49 @@
+{
+  "summary": "Backend-only iteration 2: tested new endpoints (duplicate, payment-link, midtrans webhook) + regression. 36/36 pytest cases PASSED (15 new + 21 regression). Midtrans sandbox returned 401 for the user-provided key 'Mid-server-rizlQnLFBYVcoiP9Z7YKcoRq' — our endpoint correctly returns 502 with helpful Indonesian error and leaves the invoice unmutated (graceful-failure path verified). All other new features verified end-to-end against MongoDB via Create→GET persistence pattern.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {
+        "endpoint": "POST /api/invoices/{id}/payment-link",
+        "issue": "User-supplied MIDTRANS_SERVER_KEY 'Mid-server-rizlQnLFBYVcoiP9Z7YKcoRq' is rejected by Midtrans sandbox with HTTP 401 ('Access denied due to unauthorized transaction, please check client or server key'). This is most likely a production key (no SB- prefix) or simply an invalid/placeholder key. Backend behavior is correct (502 + no mutation), but the live payment link feature will NOT work for the end user until a real sandbox key starting with 'SB-Mid-server-...' is supplied."
+      },
+      {
+        "endpoint": "POST /api/midtrans/notification",
+        "issue": "Webhook is publicly callable (no auth) and is the correct design, but rate-limiting / replay protection is absent. Not a blocker — signature_key check (SHA-512) is implemented and verified."
+      }
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_new_features.py",
+    "/app/backend/tests/test_faktur_api.py",
+    "/app/backend/tests/conftest.py",
+    "/app/test_reports/pytest/iter2_results.xml"
+  ],
+  "action_items": [
+    "Inform the user that the supplied Midtrans key 'Mid-server-rizlQnLFBYVcoiP9Z7YKcoRq' is not accepted by sandbox (likely missing 'SB-' prefix or invalid). Ask for a valid Midtrans sandbox server key (typically 'SB-Mid-server-XXXX...') to enable live payment link generation. Backend handles this gracefully (502 + invoice unchanged), so no code fix needed.",
+    "Consider adding a startup log line that warns if MIDTRANS_SERVER_KEY does not start with 'SB-' while MIDTRANS_IS_PRODUCTION='false' to surface this misconfiguration earlier."
+  ],
+  "critical_code_review_comments": [
+    "server.py: duplicate endpoint copies subtotal/ppn_amount/total directly from source rather than recomputing via compute_totals(); harmless today because items are also copied verbatim, but if a future refactor changes rates/discount semantics, totals could drift from items. Minor — not a blocker.",
+    "server.py: midtrans_notification strips timestamp from order_id by splitting on '-' and dropping the last segment. This works for invoice IDs of the form 'inv_<hex>' (no internal hyphens), which the codebase enforces via new_id(). Safe under current id generation, but fragile if id format changes.",
+    "server.py is approaching 640 lines — still under the 700-line guideline but consider splitting auth/invoices/midtrans into routers soon."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_new_features.py (NEW)"
+  ],
+  "success_rate": {
+    "backend": "100% (36/36)",
+    "frontend": "N/A (backend-only iteration)"
+  },
+  "seed_data_creation": "Reused conftest.py seeded users user_test123 (TOKEN: TEST_TOKEN_E2E) and user_testB456 (TOKEN: TEST_TOKEN_E2E_B) for cross-tenant isolation. autouse fixture wipes invoices/clients/business_profiles for both users between every test. All test data prefixed 'TEST_' / 'TEST/'.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "All new endpoints (duplicate, payment-link, midtrans webhook) are verified. Midtrans live HTTP call returns 401 because the user-provided key is not a valid sandbox key — endpoint returns 502 gracefully. If the user replaces MIDTRANS_SERVER_KEY with a real sandbox key (prefix 'SB-Mid-server-'), the test test_payment_link_creation_or_graceful_502 will auto-switch to verifying the 200/payment_url branch without code changes. Reuse /app/backend/tests/test_new_features.py and conftest.py for next iteration.",
+  "rca_of_issue": "Midtrans 401: root cause is the server key format. Production keys are 'Mid-server-...' while sandbox keys are 'SB-Mid-server-...'. The provided key 'Mid-server-rizlQnLFBYVcoiP9Z7YKcoRq' lacks the SB- prefix yet MIDTRANS_IS_PRODUCTION='false' (so we hit https://app.sandbox.midtrans.com). Midtrans sandbox does not recognize the key and returns 401. Mitigation: ask user for sandbox key; backend code already handles the failure gracefully (HTTP 502 + invoice fields remain empty strings). No reproduction needed beyond running test_payment_link_creation_or_graceful_502."
+}

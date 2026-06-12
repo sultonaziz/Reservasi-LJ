@@ -15,6 +15,7 @@ import { useFocusEffect, useRouter } from "expo-router";
 import { api } from "@/src/api/client";
 import { colors } from "@/src/theme";
 import { formatDateID, formatRp, statusLabel } from "@/src/utils/format";
+import { shareInvoicesCSV } from "@/src/utils/csv-export";
 
 const FILTERS = [
   { key: "all", label: "Semua" },
@@ -80,6 +81,15 @@ export default function InvoicesScreen() {
           <Text style={styles.overline}>RINGKASAN</Text>
           <Text style={styles.title}>Tagihan Anda</Text>
         </View>
+        <TouchableOpacity
+          testID="invoice-export-csv-btn"
+          style={styles.iconBtnGhost}
+          onPress={() => invoices.length > 0 && shareInvoicesCSV(invoices)}
+          activeOpacity={0.7}
+          disabled={invoices.length === 0}
+        >
+          <Feather name="download" size={20} color={invoices.length === 0 ? colors.textMute : colors.text} />
+        </TouchableOpacity>
         <TouchableOpacity
           testID="invoice-create-btn-header"
           style={styles.iconBtn}
@@ -213,6 +223,11 @@ const styles = StyleSheet.create({
   title: { fontSize: 28, fontWeight: "800", color: colors.text, letterSpacing: -0.6 },
   iconBtn: {
     width: 44, height: 44, borderRadius: 12, backgroundColor: colors.primary,
+    alignItems: "center", justifyContent: "center",
+  },
+  iconBtnGhost: {
+    width: 44, height: 44, borderRadius: 12, backgroundColor: colors.surface,
+    borderWidth: 1, borderColor: colors.border,
     alignItems: "center", justifyContent: "center",
   },
   summaryRow: { flexDirection: "row", gap: 12, paddingHorizontal: 24 },

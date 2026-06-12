@@ -91,4 +91,8 @@ export const api = {
       body: JSON.stringify({ status }),
     }),
   deleteInvoice: (id: string) => request(`/invoices/${id}`, { method: "DELETE" }),
+  duplicateInvoice: (id: string) =>
+    request<any>(`/invoices/${id}/duplicate`, { method: "POST" }),
+  createPaymentLink: (id: string) =>
+    request<any>(`/invoices/${id}/payment-link`, { method: "POST" }),
 };

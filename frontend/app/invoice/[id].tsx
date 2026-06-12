@@ -144,6 +144,34 @@ export default function InvoiceDetail() {
     }
   };
 
+  const duplicate = async () => {
+    setBusy(true);
+    try {
+      const dup = await api.duplicateInvoice(id);
+      showToast("Invoice diduplikasi");
+      router.replace(`/invoice/edit/${dup.id}`);
+    } catch (e) {
+      console.warn(e);
+      showToast("Gagal duplikasi");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const createPayment = async () => {
+    setBusy(true);
+    try {
+      const updated = await api.createPaymentLink(id);
+      setInvoice(updated);
+      showToast("Link pembayaran dibuat");
+    } catch (e: any) {
+      console.warn(e);
+      showToast("Gagal membuat link");
+    } finally {
+      setBusy(false);
+    }
+  };
+
   if (loading || !invoice) {
     return (
       <SafeAreaView edges={["top"]} style={styles.root}>
@@ -263,7 +291,57 @@ export default function InvoiceDetail() {
           </View>
         ) : null}
 
-        <View style={{ paddingHorizontal: 24, marginTop: 16 }}>
+        {/* Payment link card */}
+        <View style={styles.paymentCard}>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.paymentLabel}>Link Pembayaran Midtrans</Text>
+            <Text style={styles.paymentSub} numberOfLines={1}>
+              {invoice.payment_url ? "QRIS / VA / e-wallet siap dibagikan" : "Buat link pembayaran online"}
+            </Text>
+          </View>
+          {invoice.payment_url ? (
+            <View style={{ flexDirection: "row", gap: 8 }}>
+              <TouchableOpacity
+                testID="payment-link-open-btn"
+                style={styles.paymentBtnGhost}
+                onPress={() => Linking.openURL(invoice.payment_url)}
+                activeOpacity={0.8}
+              >
+                <Feather name="external-link" size={16} color={colors.text} />
+              </TouchableOpacity>
+              <TouchableOpacity
+                testID="payment-link-refresh-btn"
+                style={styles.paymentBtnGhost}
+                onPress={createPayment}
+                activeOpacity={0.8}
+                disabled={busy}
+              >
+                <Feather name="refresh-cw" size={16} color={colors.text} />
+              </TouchableOpacity>
+            </View>
+          ) : (
+            <TouchableOpacity
+              testID="payment-link-create-btn"
+              style={styles.paymentBtn}
+              onPress={createPayment}
+              disabled={busy}
+              activeOpacity={0.85}
+            >
+              {busy ? <ActivityIndicator color="#FFFFFF" /> : (
+                <>
+                  <Feather name="credit-card" size={14} color="#FFFFFF" />
+                  <Text style={styles.paymentBtnText}>Buat Link</Text>
+                </>
+              )}
+            </TouchableOpacity>
+          )}
+        </View>
+
+        <View style={{ paddingHorizontal: 24, marginTop: 8 }}>
+          <TouchableOpacity testID="invoice-duplicate-btn" style={styles.actionRow} onPress={duplicate} activeOpacity={0.7} disabled={busy}>
+            <Feather name="copy" size={16} color={colors.primary} />
+            <Text style={styles.actionText}>Duplikat Invoice</Text>
+          </TouchableOpacity>
           <TouchableOpacity testID="invoice-delete-btn" style={styles.delRow} onPress={del} activeOpacity={0.7} disabled={busy}>
             <Feather name="trash-2" size={16} color={colors.accent} />
             <Text style={styles.delText}>Hapus Invoice</Text>
@@ -368,6 +446,14 @@ const styles = StyleSheet.create({
   notesCard: { marginHorizontal: 24, marginTop: 16, padding: 16, borderRadius: 14, backgroundColor: colors.borderLight },
   notesLabel: { fontSize: 11, fontWeight: "800", color: colors.textMute, letterSpacing: 1, textTransform: "uppercase", marginBottom: 6 },
   notesText: { fontSize: 14, color: colors.textMid, lineHeight: 20 },
+  paymentCard: { marginHorizontal: 24, marginTop: 16, padding: 16, borderRadius: 14, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, flexDirection: "row", alignItems: "center", gap: 12 },
+  paymentLabel: { fontSize: 14, fontWeight: "700", color: colors.text },
+  paymentSub: { fontSize: 12, color: colors.textMute, marginTop: 2 },
+  paymentBtn: { height: 40, paddingHorizontal: 14, borderRadius: 10, backgroundColor: colors.primary, alignItems: "center", justifyContent: "center", flexDirection: "row", gap: 6, minWidth: 100 },
+  paymentBtnText: { color: "#FFFFFF", fontWeight: "700", fontSize: 13 },
+  paymentBtnGhost: { width: 40, height: 40, borderRadius: 10, borderWidth: 1, borderColor: colors.border, alignItems: "center", justifyContent: "center" },
+  actionRow: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, paddingVertical: 12 },
+  actionText: { color: colors.primary, fontWeight: "600", fontSize: 14 },
   delRow: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, paddingVertical: 14 },
   delText: { color: colors.accent, fontWeight: "600", fontSize: 14 },
   stickyFooter: { position: "absolute", left: 0, right: 0, bottom: 0, paddingHorizontal: 24, paddingTop: 12, paddingBottom: 20, borderTopWidth: 1, borderTopColor: colors.border, backgroundColor: colors.bg, flexDirection: "row", gap: 10 },

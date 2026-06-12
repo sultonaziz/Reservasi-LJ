@@ -18,6 +18,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { Feather } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import { api } from "@/src/api/client";
+import { DateField } from "@/src/components/DateField";
 import { colors } from "@/src/theme";
 import { addDaysISO, formatRp, todayISO } from "@/src/utils/format";
 
@@ -172,29 +173,9 @@ export default function InvoiceEditor({ invoiceId }: { invoiceId?: string }) {
 
           {/* Dates */}
           <View style={[styles.fieldRow, { paddingHorizontal: 24, marginTop: 14 }]}>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.fieldLabel}>Tgl Invoice</Text>
-              <TextInput
-                testID="invoice-issue-date"
-                value={issueDate}
-                onChangeText={setIssueDate}
-                style={styles.input}
-                placeholder="YYYY-MM-DD"
-                placeholderTextColor={colors.textMute}
-              />
-            </View>
+            <DateField testID="invoice-issue-date" label="Tgl Invoice" value={issueDate} onChange={setIssueDate} />
             <View style={{ width: 12 }} />
-            <View style={{ flex: 1 }}>
-              <Text style={styles.fieldLabel}>Jatuh Tempo</Text>
-              <TextInput
-                testID="invoice-due-date"
-                value={dueDate}
-                onChangeText={setDueDate}
-                style={styles.input}
-                placeholder="YYYY-MM-DD"
-                placeholderTextColor={colors.textMute}
-              />
-            </View>
+            <DateField testID="invoice-due-date" label="Jatuh Tempo" value={dueDate} onChange={setDueDate} />
           </View>
 
           {/* Line items */}
