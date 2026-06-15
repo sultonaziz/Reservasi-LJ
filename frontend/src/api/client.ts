@@ -95,4 +95,42 @@ export const api = {
     request<any>(`/invoices/${id}/duplicate`, { method: "POST" }),
   createPaymentLink: (id: string) =>
     request<any>(`/invoices/${id}/payment-link`, { method: "POST" }),
+
+  // buses (fleet/armada)
+  listBuses: () => request<any[]>("/buses"),
+  getBus: (id: string) => request<any>(`/buses/${id}`),
+  createBus: (data: any) =>
+    request<any>("/buses", { method: "POST", body: JSON.stringify(data) }),
+  updateBus: (id: string, data: any) =>
+    request<any>(`/buses/${id}`, { method: "PUT", body: JSON.stringify(data) }),
+  deleteBus: (id: string) => request(`/buses/${id}`, { method: "DELETE" }),
+
+  // drivers
+  listDrivers: () => request<any[]>("/drivers"),
+  getDriver: (id: string) => request<any>(`/drivers/${id}`),
+  createDriver: (data: any) =>
+    request<any>("/drivers", { method: "POST", body: JSON.stringify(data) }),
+  updateDriver: (id: string, data: any) =>
+    request<any>(`/drivers/${id}`, { method: "PUT", body: JSON.stringify(data) }),
+  deleteDriver: (id: string) => request(`/drivers/${id}`, { method: "DELETE" }),
+
+  // reservations
+  listReservations: (status?: string) =>
+    request<any[]>(status ? `/reservations?status=${status}` : "/reservations"),
+  getReservation: (id: string) => request<any>(`/reservations/${id}`),
+  createReservation: (data: any) =>
+    request<any>("/reservations", { method: "POST", body: JSON.stringify(data) }),
+  updateReservation: (id: string, data: any) =>
+    request<any>(`/reservations/${id}`, { method: "PUT", body: JSON.stringify(data) }),
+  setReservationStatus: (id: string, status: string) =>
+    request<any>(`/reservations/${id}/status`, {
+      method: "PATCH",
+      body: JSON.stringify({ status }),
+    }),
+  deleteReservation: (id: string) => request(`/reservations/${id}`, { method: "DELETE" }),
+  getReservationCalendar: (year: number, month: number) =>
+    request<any[]>(`/reservations/calendar?year=${year}&month=${month}`),
+  getReservationReminders: () => request<any[]>("/reservations/reminders"),
+  reservationToInvoice: (id: string) =>
+    request<{ invoice: any; message: string }>(`/reservations/${id}/to-invoice`, { method: "POST" }),
 };

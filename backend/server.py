@@ -7,6 +7,12 @@ Endpoints (all under /api):
   - Invoices:                GET /invoices, POST /invoices, GET /invoices/{id},
                              PUT /invoices/{id}, DELETE /invoices/{id},
                              PATCH /invoices/{id}/status, GET /invoices/next-number
+  - Buses (Fleet):           GET /buses, POST /buses, PUT /buses/{id}, DELETE /buses/{id}
+  - Drivers:                 GET /drivers, POST /drivers, PUT /drivers/{id}, DELETE /drivers/{id}
+  - Reservations:            GET /reservations, POST /reservations, GET /reservations/{id},
+                             PUT /reservations/{id}, DELETE /reservations/{id},
+                             PATCH /reservations/{id}/status, GET /reservations/calendar,
+                             GET /reservations/reminders, POST /reservations/{id}/to-invoice
 """
 from __future__ import annotations
 
@@ -172,6 +178,129 @@ class InvoiceUpdate(BaseModel):
 
 class StatusUpdate(BaseModel):
     status: str
+
+
+# ---------- Bus/Fleet Models ----------
+class Bus(BaseModel):
+    id: str = Field(default_factory=lambda: new_id("bus"))
+    user_id: str
+    name: str  # Nama armada, mis: "Bus Pariwisata 45"
+    plate_number: str  # Plat nomor, mis: "B 1234 ABC"
+    capacity: int = 45  # Kapasitas kursi
+    description: str = ""  # Deskripsi tambahan
+    is_active: bool = True
+    created_at: datetime = Field(default_factory=now_utc)
+
+
+class BusCreate(BaseModel):
+    name: str
+    plate_number: str
+    capacity: int = 45
+    description: str = ""
+    is_active: bool = True
+
+
+class BusUpdate(BaseModel):
+    name: Optional[str] = None
+    plate_number: Optional[str] = None
+    capacity: Optional[int] = None
+    description: Optional[str] = None
+    is_active: Optional[bool] = None
+
+
+# ---------- Driver Models ----------
+class Driver(BaseModel):
+    id: str = Field(default_factory=lambda: new_id("drv"))
+    user_id: str
+    name: str
+    phone: str = ""
+    license_number: str = ""  # Nomor SIM
+    is_active: bool = True
+    created_at: datetime = Field(default_factory=now_utc)
+
+
+class DriverCreate(BaseModel):
+    name: str
+    phone: str = ""
+    license_number: str = ""
+    is_active: bool = True
+
+
+class DriverUpdate(BaseModel):
+    name: Optional[str] = None
+    phone: Optional[str] = None
+    license_number: Optional[str] = None
+    is_active: Optional[bool] = None
+
+
+# ---------- Reservation Models ----------
+class PickupDetails(BaseModel):
+    pic_name: str = ""  # Nama PIC (Person in Charge)
+    pic_phone: str = ""  # Telepon PIC
+    address: str = ""  # Alamat lengkap penjemputan
+    standby_time: str = ""  # Waktu standby, mis: "05:00"
+    seat_capacity: int = 0  # Jumlah kursi yang dipesan
+
+
+class Reservation(BaseModel):
+    id: str = Field(default_factory=lambda: new_id("rsv"))
+    user_id: str
+    client_id: Optional[str] = None
+    client_snapshot: dict = Field(default_factory=dict)  # name/phone/email at creation
+    bus_id: Optional[str] = None
+    bus_snapshot: dict = Field(default_factory=dict)  # name/plate_number/capacity
+    driver_id: Optional[str] = None
+    driver_snapshot: dict = Field(default_factory=dict)  # name/phone
+    # Dates
+    departure_date: str  # YYYY-MM-DD - Tanggal keberangkatan
+    return_date: str = ""  # YYYY-MM-DD - Tanggal kembali (opsional untuk one-way)
+    # Pickup details
+    pickup: PickupDetails = Field(default_factory=PickupDetails)
+    # Destination info
+    destination: str = ""  # Tujuan perjalanan
+    notes: str = ""
+    # Status: booked | downpayment | paid | cancel
+    status: str = "booked"
+    # Pricing
+    total_price: float = 0
+    downpayment: float = 0
+    # Invoice link
+    invoice_id: Optional[str] = None
+    # Timestamps
+    created_at: datetime = Field(default_factory=now_utc)
+    updated_at: datetime = Field(default_factory=now_utc)
+
+
+class ReservationCreate(BaseModel):
+    client_id: Optional[str] = None
+    bus_id: Optional[str] = None
+    driver_id: Optional[str] = None
+    departure_date: str
+    return_date: str = ""
+    pickup: PickupDetails = Field(default_factory=PickupDetails)
+    destination: str = ""
+    notes: str = ""
+    status: str = "booked"
+    total_price: float = 0
+    downpayment: float = 0
+
+
+class ReservationUpdate(BaseModel):
+    client_id: Optional[str] = None
+    bus_id: Optional[str] = None
+    driver_id: Optional[str] = None
+    departure_date: Optional[str] = None
+    return_date: Optional[str] = None
+    pickup: Optional[PickupDetails] = None
+    destination: Optional[str] = None
+    notes: Optional[str] = None
+    status: Optional[str] = None
+    total_price: Optional[float] = None
+    downpayment: Optional[float] = None
+
+
+class ReservationStatusUpdate(BaseModel):
+    status: str  # booked | downpayment | paid | cancel
 
 
 # ---------- Auth ----------
@@ -605,6 +734,381 @@ async def duplicate_invoice(invoice_id: str, user: dict = Depends(get_current_us
     return new_inv.dict()
 
 
+# ---------- Buses (Fleet/Armada) ----------
+@api.get("/buses")
+async def list_buses(user: dict = Depends(get_current_user)):
+    cursor = db.buses.find({"user_id": user["user_id"]}, {"_id": 0}).sort("created_at", -1)
+    return await cursor.to_list(1000)
+
+
+@api.post("/buses")
+async def create_bus(body: BusCreate, user: dict = Depends(get_current_user)):
+    bus = Bus(user_id=user["user_id"], **body.dict())
+    await db.buses.insert_one(bus.dict())
+    return bus.dict()
+
+
+@api.get("/buses/{bus_id}")
+async def get_bus(bus_id: str, user: dict = Depends(get_current_user)):
+    doc = await db.buses.find_one({"id": bus_id, "user_id": user["user_id"]}, {"_id": 0})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Bus tidak ditemukan")
+    return doc
+
+
+@api.put("/buses/{bus_id}")
+async def update_bus(bus_id: str, body: BusUpdate, user: dict = Depends(get_current_user)):
+    updates = {k: v for k, v in body.dict().items() if v is not None}
+    if not updates:
+        raise HTTPException(status_code=400, detail="Tidak ada data untuk diupdate")
+    res = await db.buses.update_one(
+        {"id": bus_id, "user_id": user["user_id"]}, {"$set": updates}
+    )
+    if res.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Bus tidak ditemukan")
+    doc = await db.buses.find_one({"id": bus_id}, {"_id": 0})
+    return doc
+
+
+@api.delete("/buses/{bus_id}")
+async def delete_bus(bus_id: str, user: dict = Depends(get_current_user)):
+    await db.buses.delete_one({"id": bus_id, "user_id": user["user_id"]})
+    return {"ok": True}
+
+
+# ---------- Drivers ----------
+@api.get("/drivers")
+async def list_drivers(user: dict = Depends(get_current_user)):
+    cursor = db.drivers.find({"user_id": user["user_id"]}, {"_id": 0}).sort("created_at", -1)
+    return await cursor.to_list(1000)
+
+
+@api.post("/drivers")
+async def create_driver(body: DriverCreate, user: dict = Depends(get_current_user)):
+    driver = Driver(user_id=user["user_id"], **body.dict())
+    await db.drivers.insert_one(driver.dict())
+    return driver.dict()
+
+
+@api.get("/drivers/{driver_id}")
+async def get_driver(driver_id: str, user: dict = Depends(get_current_user)):
+    doc = await db.drivers.find_one({"id": driver_id, "user_id": user["user_id"]}, {"_id": 0})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Driver tidak ditemukan")
+    return doc
+
+
+@api.put("/drivers/{driver_id}")
+async def update_driver(driver_id: str, body: DriverUpdate, user: dict = Depends(get_current_user)):
+    updates = {k: v for k, v in body.dict().items() if v is not None}
+    if not updates:
+        raise HTTPException(status_code=400, detail="Tidak ada data untuk diupdate")
+    res = await db.drivers.update_one(
+        {"id": driver_id, "user_id": user["user_id"]}, {"$set": updates}
+    )
+    if res.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Driver tidak ditemukan")
+    doc = await db.drivers.find_one({"id": driver_id}, {"_id": 0})
+    return doc
+
+
+@api.delete("/drivers/{driver_id}")
+async def delete_driver(driver_id: str, user: dict = Depends(get_current_user)):
+    await db.drivers.delete_one({"id": driver_id, "user_id": user["user_id"]})
+    return {"ok": True}
+
+
+# ---------- Reservations ----------
+async def get_reservation_snapshots(user_id: str, client_id: str = None, bus_id: str = None, driver_id: str = None):
+    """Helper to fetch snapshots for reservation."""
+    client_snap, bus_snap, driver_snap = {}, {}, {}
+    
+    if client_id:
+        c = await db.clients.find_one({"id": client_id, "user_id": user_id}, {"_id": 0})
+        if c:
+            client_snap = {"name": c.get("name", ""), "phone": c.get("phone", ""), "email": c.get("email", "")}
+    
+    if bus_id:
+        b = await db.buses.find_one({"id": bus_id, "user_id": user_id}, {"_id": 0})
+        if b:
+            bus_snap = {"name": b.get("name", ""), "plate_number": b.get("plate_number", ""), "capacity": b.get("capacity", 0)}
+    
+    if driver_id:
+        d = await db.drivers.find_one({"id": driver_id, "user_id": user_id}, {"_id": 0})
+        if d:
+            driver_snap = {"name": d.get("name", ""), "phone": d.get("phone", "")}
+    
+    return client_snap, bus_snap, driver_snap
+
+
+@api.get("/reservations")
+async def list_reservations(
+    status: Optional[str] = None,
+    user: dict = Depends(get_current_user)
+):
+    query = {"user_id": user["user_id"]}
+    if status:
+        query["status"] = status
+    cursor = db.reservations.find(query, {"_id": 0}).sort("departure_date", -1)
+    return await cursor.to_list(1000)
+
+
+@api.post("/reservations")
+async def create_reservation(body: ReservationCreate, user: dict = Depends(get_current_user)):
+    client_snap, bus_snap, driver_snap = await get_reservation_snapshots(
+        user["user_id"], body.client_id, body.bus_id, body.driver_id
+    )
+    
+    rsv = Reservation(
+        user_id=user["user_id"],
+        client_id=body.client_id,
+        client_snapshot=client_snap,
+        bus_id=body.bus_id,
+        bus_snapshot=bus_snap,
+        driver_id=body.driver_id,
+        driver_snapshot=driver_snap,
+        departure_date=body.departure_date,
+        return_date=body.return_date,
+        pickup=body.pickup,
+        destination=body.destination,
+        notes=body.notes,
+        status=body.status,
+        total_price=body.total_price,
+        downpayment=body.downpayment,
+    )
+    await db.reservations.insert_one(rsv.dict())
+    return rsv.dict()
+
+
+@api.get("/reservations/calendar")
+async def reservations_calendar(
+    year: int,
+    month: int,
+    user: dict = Depends(get_current_user)
+):
+    """Get reservations for calendar view - filter by year/month."""
+    # Build date range for the month
+    start_date = f"{year:04d}-{month:02d}-01"
+    if month == 12:
+        end_date = f"{year + 1:04d}-01-01"
+    else:
+        end_date = f"{year:04d}-{month + 1:02d}-01"
+    
+    # Find reservations where departure_date is in the range
+    # OR where the reservation spans across this month
+    cursor = db.reservations.find(
+        {
+            "user_id": user["user_id"],
+            "status": {"$ne": "cancel"},
+            "$or": [
+                {"departure_date": {"$gte": start_date, "$lt": end_date}},
+                {"return_date": {"$gte": start_date, "$lt": end_date}},
+                {
+                    "departure_date": {"$lt": start_date},
+                    "return_date": {"$gte": end_date}
+                }
+            ]
+        },
+        {"_id": 0}
+    ).sort("departure_date", 1)
+    return await cursor.to_list(1000)
+
+
+@api.get("/reservations/reminders")
+async def reservations_reminders(user: dict = Depends(get_current_user)):
+    """Get reservations that need attention (H-2 before departure)."""
+    today = now_utc().date()
+    reminder_date = (today + timedelta(days=2)).strftime("%Y-%m-%d")
+    today_str = today.strftime("%Y-%m-%d")
+    
+    # Find reservations departing in 2 days that are not fully paid
+    # and don't have complete pickup details
+    cursor = db.reservations.find(
+        {
+            "user_id": user["user_id"],
+            "departure_date": {"$lte": reminder_date, "$gte": today_str},
+            "status": {"$in": ["booked", "downpayment"]},
+        },
+        {"_id": 0}
+    ).sort("departure_date", 1)
+    
+    reservations = await cursor.to_list(100)
+    
+    # Add reminder reasons
+    for rsv in reservations:
+        reasons = []
+        if rsv.get("status") in ["booked", "downpayment"]:
+            reasons.append("Belum lunas")
+        pickup = rsv.get("pickup", {})
+        if not pickup.get("pic_name") or not pickup.get("address") or not pickup.get("standby_time"):
+            reasons.append("Detail pickup belum lengkap")
+        rsv["reminder_reasons"] = reasons
+    
+    return reservations
+
+
+@api.get("/reservations/{reservation_id}")
+async def get_reservation(reservation_id: str, user: dict = Depends(get_current_user)):
+    doc = await db.reservations.find_one(
+        {"id": reservation_id, "user_id": user["user_id"]}, {"_id": 0}
+    )
+    if not doc:
+        raise HTTPException(status_code=404, detail="Reservasi tidak ditemukan")
+    return doc
+
+
+@api.put("/reservations/{reservation_id}")
+async def update_reservation(
+    reservation_id: str,
+    body: ReservationUpdate,
+    user: dict = Depends(get_current_user)
+):
+    doc = await db.reservations.find_one(
+        {"id": reservation_id, "user_id": user["user_id"]}, {"_id": 0}
+    )
+    if not doc:
+        raise HTTPException(status_code=404, detail="Reservasi tidak ditemukan")
+    
+    updates = {k: v for k, v in body.dict().items() if v is not None}
+    
+    # Update snapshots if IDs changed
+    if "client_id" in updates or "bus_id" in updates or "driver_id" in updates:
+        client_snap, bus_snap, driver_snap = await get_reservation_snapshots(
+            user["user_id"],
+            updates.get("client_id", doc.get("client_id")),
+            updates.get("bus_id", doc.get("bus_id")),
+            updates.get("driver_id", doc.get("driver_id"))
+        )
+        if "client_id" in updates:
+            updates["client_snapshot"] = client_snap
+        if "bus_id" in updates:
+            updates["bus_snapshot"] = bus_snap
+        if "driver_id" in updates:
+            updates["driver_snapshot"] = driver_snap
+    
+    # Convert pickup to dict if present
+    if "pickup" in updates and updates["pickup"]:
+        updates["pickup"] = updates["pickup"].dict() if hasattr(updates["pickup"], "dict") else updates["pickup"]
+    
+    updates["updated_at"] = now_utc()
+    
+    await db.reservations.update_one({"id": reservation_id}, {"$set": updates})
+    fresh = await db.reservations.find_one({"id": reservation_id}, {"_id": 0})
+    return fresh
+
+
+@api.patch("/reservations/{reservation_id}/status")
+async def patch_reservation_status(
+    reservation_id: str,
+    body: ReservationStatusUpdate,
+    user: dict = Depends(get_current_user)
+):
+    if body.status not in ("booked", "downpayment", "paid", "cancel"):
+        raise HTTPException(status_code=400, detail="Status tidak valid. Pilih: booked, downpayment, paid, cancel")
+    
+    res = await db.reservations.update_one(
+        {"id": reservation_id, "user_id": user["user_id"]},
+        {"$set": {"status": body.status, "updated_at": now_utc()}}
+    )
+    if res.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Reservasi tidak ditemukan")
+    
+    doc = await db.reservations.find_one({"id": reservation_id}, {"_id": 0})
+    return doc
+
+
+@api.delete("/reservations/{reservation_id}")
+async def delete_reservation(reservation_id: str, user: dict = Depends(get_current_user)):
+    await db.reservations.delete_one({"id": reservation_id, "user_id": user["user_id"]})
+    return {"ok": True}
+
+
+@api.post("/reservations/{reservation_id}/to-invoice")
+async def reservation_to_invoice(reservation_id: str, user: dict = Depends(get_current_user)):
+    """Convert a reservation to an invoice."""
+    rsv = await db.reservations.find_one(
+        {"id": reservation_id, "user_id": user["user_id"]}, {"_id": 0}
+    )
+    if not rsv:
+        raise HTTPException(status_code=404, detail="Reservasi tidak ditemukan")
+    
+    # Check if already has invoice
+    if rsv.get("invoice_id"):
+        existing_inv = await db.invoices.find_one({"id": rsv["invoice_id"]}, {"_id": 0})
+        if existing_inv:
+            return {"invoice": existing_inv, "message": "Invoice sudah ada"}
+    
+    # Generate next invoice number
+    now = now_utc()
+    prefix = f"INV/{now.year}/{now.month:02d}/"
+    escaped = prefix.replace("/", r"\/")
+    cursor = db.invoices.find(
+        {"user_id": user["user_id"], "number": {"$regex": f"^{escaped}"}},
+        {"_id": 0, "number": 1},
+    )
+    docs = await cursor.to_list(10000)
+    max_seq = 0
+    for d in docs:
+        try:
+            seq = int(d["number"].split("/")[-1])
+            max_seq = max(max_seq, seq)
+        except (ValueError, IndexError):
+            continue
+    inv_number = f"{prefix}{max_seq + 1:04d}"
+    
+    # Build invoice items from reservation
+    items = []
+    bus_name = rsv.get("bus_snapshot", {}).get("name", "Bus")
+    destination = rsv.get("destination", "Perjalanan")
+    departure = rsv.get("departure_date", "")
+    return_date = rsv.get("return_date", "")
+    
+    trip_desc = f"Sewa {bus_name}"
+    if destination:
+        trip_desc += f" - {destination}"
+    if departure:
+        trip_desc += f" ({departure}"
+        if return_date:
+            trip_desc += f" s/d {return_date}"
+        trip_desc += ")"
+    
+    items.append({
+        "description": trip_desc,
+        "quantity": 1,
+        "rate": rsv.get("total_price", 0)
+    })
+    
+    # Create invoice
+    client_snapshot = rsv.get("client_snapshot", {})
+    subtotal = rsv.get("total_price", 0)
+    
+    new_inv = Invoice(
+        user_id=user["user_id"],
+        number=inv_number,
+        client_id=rsv.get("client_id"),
+        client_snapshot=client_snapshot,
+        issue_date=now.strftime("%Y-%m-%d"),
+        due_date=(now + timedelta(days=7)).strftime("%Y-%m-%d"),
+        items=[LineItem(**it) for it in items],
+        ppn_enabled=False,
+        ppn_rate=11.0,
+        notes=f"Invoice dari Reservasi #{reservation_id}\n{rsv.get('notes', '')}",
+        status="sent",
+        subtotal=subtotal,
+        ppn_amount=0,
+        total=subtotal,
+    )
+    await db.invoices.insert_one(new_inv.dict())
+    
+    # Link invoice to reservation
+    await db.reservations.update_one(
+        {"id": reservation_id},
+        {"$set": {"invoice_id": new_inv.id, "updated_at": now_utc()}}
+    )
+    
+    return {"invoice": new_inv.dict(), "message": "Invoice berhasil dibuat"}
+
+
 @api.get("/")
 async def root():
     return {"message": "Faktur Indo API", "ok": True}
@@ -631,6 +1135,16 @@ async def startup():
         await db.clients.create_index([("user_id", 1), ("created_at", -1)])
         await db.invoices.create_index([("user_id", 1), ("created_at", -1)])
         await db.invoices.create_index([("user_id", 1), ("number", 1)])
+        # Bus/Fleet indexes
+        await db.buses.create_index([("user_id", 1), ("created_at", -1)])
+        await db.buses.create_index("id", unique=True)
+        # Driver indexes
+        await db.drivers.create_index([("user_id", 1), ("created_at", -1)])
+        await db.drivers.create_index("id", unique=True)
+        # Reservation indexes
+        await db.reservations.create_index([("user_id", 1), ("departure_date", -1)])
+        await db.reservations.create_index([("user_id", 1), ("status", 1)])
+        await db.reservations.create_index("id", unique=True)
     except Exception as e:
         logger.warning("Index creation issue: %s", e)
 
