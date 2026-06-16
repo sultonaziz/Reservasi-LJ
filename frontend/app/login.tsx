@@ -11,7 +11,7 @@ export default function Login() {
   return (
     <View style={styles.root} testID="login-screen">
       <Image
-        source={require("@/assets/images/bus-hero.jpg")}
+        source={require("@/assets/images/bus-laks.jpg")}
         style={StyleSheet.absoluteFill}
         resizeMode="cover"
       />

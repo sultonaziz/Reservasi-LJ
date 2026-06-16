@@ -54,8 +54,11 @@ export function buildInvoiceHTML(invoice: any, profile: any): string {
   .total-row.grand { border-top:2px solid #166534; padding-top:12px; margin-top:6px; font-size:18px; font-weight:800; color:#166534; }
   .footer { margin-top:36px; display:flex; justify-content:space-between; }
   .bank { font-size:11px; color:#44403C; max-width:280px; line-height:1.6; }
+  .sig-area { display:flex; align-items:flex-end; gap:24px; }
   .sig-block { text-align:center; }
   .sig-line { border-top:1px solid #E7E5E4; padding-top:6px; min-width:160px; font-size:11px; color:#44403C; }
+  .qr-block { text-align:center; }
+  .qr-label { font-size:9px; color:#78716C; margin-top:4px; }
   .notes { margin-top:16px; padding:14px; background:#F5F5F4; border-radius:8px; font-size:12px; color:#44403C; line-height:1.5; }
 </style>
 </head><body>
@@ -115,9 +118,17 @@ export function buildInvoiceHTML(invoice: any, profile: any): string {
       <div class="bank">
         ${profile?.bank_info ? `<div class="label">Pembayaran</div>${esc(profile.bank_info).replace(/\n/g, "<br/>")}` : ""}
       </div>
-      <div class="sig-block">
-        ${signature}
-        <div class="sig-line">${esc(profile?.name || "Tanda Tangan")}</div>
+      <div class="sig-area">
+        <div class="sig-block">
+          ${signature}
+          <div class="sig-line">${esc(profile?.name || "Tanda Tangan")}</div>
+        </div>
+        ${profile?.signature_qr_base64 ? `
+        <div class="qr-block">
+          <img src="${profile.signature_qr_base64}" style="width:80px;height:80px;" />
+          <div class="qr-label">Verifikasi Digital</div>
+        </div>
+        ` : ""}
       </div>
     </div>
   </div>

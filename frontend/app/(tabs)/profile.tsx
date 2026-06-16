@@ -19,6 +19,7 @@ import * as ImagePicker from "expo-image-picker";
 import { api } from "@/src/api/client";
 import { useAuth } from "@/src/contexts/AuthContext";
 import { colors } from "@/src/theme";
+import { generateQRCodeBase64, buildSignatureQRData } from "@/src/utils/qrcode";
 
 export default function ProfileScreen() {
   const { user, logout } = useAuth();
@@ -27,6 +28,7 @@ export default function ProfileScreen() {
   const [saving, setSaving] = useState(false);
   const [savedMsg, setSavedMsg] = useState("");
   const [activeSection, setActiveSection] = useState<"business" | "notification">("business");
+  const [generatingQR, setGeneratingQR] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -58,6 +60,24 @@ export default function ProfileScreen() {
     if (!res.canceled && res.assets[0]?.base64) {
       const mime = res.assets[0].mimeType || "image/jpeg";
       set(key, `data:${mime};base64,${res.assets[0].base64}`);
+    }
+  };
+
+  const generateQRCode = async () => {
+    if (!profile?.name) {
+      Alert.alert("Error", "Silakan isi nama bisnis terlebih dahulu");
+      return;
+    }
+    setGeneratingQR(true);
+    try {
+      const qrData = buildSignatureQRData(profile);
+      const base64 = await generateQRCodeBase64(qrData, 200);
+      set("signature_qr_base64", base64);
+      Alert.alert("Sukses", "QR Code tanda tangan digital berhasil dibuat");
+    } catch (e) {
+      Alert.alert("Error", "Gagal membuat QR Code. Silakan coba lagi.");
+    } finally {
+      setGeneratingQR(false);
     }
   };
 
@@ -180,21 +200,44 @@ export default function ProfileScreen() {
               <View style={styles.section}>
                 <Text style={styles.sectionLabel}>QR Code Tanda Tangan Digital</Text>
                 <Text style={styles.sectionHint}>QR code ini akan muncul di invoice PDF sebagai verifikasi digital</Text>
-                <TouchableOpacity
-                  testID="profile-qr-picker"
-                  style={styles.qrBox}
-                  onPress={() => pickImage("signature_qr_base64")}
-                  activeOpacity={0.8}
-                >
-                  {profile.signature_qr_base64 ? (
-                    <Image source={{ uri: profile.signature_qr_base64 }} style={styles.qrImg} resizeMode="contain" />
-                  ) : (
-                    <View style={styles.logoPlaceholder}>
-                      <Feather name="grid" size={32} color={colors.textMute} />
-                      <Text style={styles.logoHint}>Upload QR Code</Text>
-                    </View>
-                  )}
-                </TouchableOpacity>
+                <View style={styles.qrRow}>
+                  <TouchableOpacity
+                    testID="profile-qr-picker"
+                    style={styles.qrBox}
+                    onPress={() => pickImage("signature_qr_base64")}
+                    activeOpacity={0.8}
+                  >
+                    {profile.signature_qr_base64 ? (
+                      <Image source={{ uri: profile.signature_qr_base64 }} style={styles.qrImg} resizeMode="contain" />
+                    ) : (
+                      <View style={styles.logoPlaceholder}>
+                        <Feather name="grid" size={32} color={colors.textMute} />
+                        <Text style={styles.logoHint}>Upload QR</Text>
+                      </View>
+                    )}
+                  </TouchableOpacity>
+                  <View style={styles.qrActions}>
+                    <TouchableOpacity
+                      testID="generate-qr-btn"
+                      style={styles.generateQRBtn}
+                      onPress={generateQRCode}
+                      activeOpacity={0.8}
+                      disabled={generatingQR}
+                    >
+                      {generatingQR ? (
+                        <ActivityIndicator size="small" color={colors.primary} />
+                      ) : (
+                        <>
+                          <Feather name="zap" size={18} color={colors.primary} />
+                          <Text style={styles.generateQRText}>Generate Otomatis</Text>
+                        </>
+                      )}
+                    </TouchableOpacity>
+                    <Text style={styles.qrActionHint}>
+                      Buat QR code berdasarkan data bisnis Anda
+                    </Text>
+                  </View>
+                </View>
               </View>
             </>
           ) : (
@@ -344,8 +387,13 @@ const styles = StyleSheet.create({
   logoHint: { fontSize: 11, color: colors.textMute, textAlign: "center" },
   sigBox: { height: 90, borderRadius: 16, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, alignItems: "center", justifyContent: "center", overflow: "hidden", paddingHorizontal: 12 },
   sigImg: { width: "100%", height: "100%" },
-  qrBox: { width: 120, height: 120, borderRadius: 16, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, alignItems: "center", justifyContent: "center", overflow: "hidden" },
+  qrRow: { flexDirection: "row", alignItems: "flex-start", gap: 16 },
+  qrBox: { width: 100, height: 100, borderRadius: 16, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, alignItems: "center", justifyContent: "center", overflow: "hidden" },
   qrImg: { width: "100%", height: "100%" },
+  qrActions: { flex: 1, gap: 8 },
+  generateQRBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, paddingVertical: 12, paddingHorizontal: 16, borderRadius: 12, borderWidth: 1, borderColor: colors.primary, backgroundColor: colors.status.booked.bg },
+  generateQRText: { fontSize: 14, fontWeight: "600", color: colors.primary },
+  qrActionHint: { fontSize: 11, color: colors.textMute, lineHeight: 16 },
   fieldWrap: { paddingHorizontal: 24, marginTop: 14 },
   fieldLabel: { fontSize: 12, fontWeight: "700", color: colors.textMid, marginBottom: 6, textTransform: "uppercase", letterSpacing: 0.8 },
   fieldHint: { fontSize: 11, color: colors.textMute, paddingHorizontal: 24, marginTop: 4 },
