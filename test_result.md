@@ -205,27 +205,101 @@ backend:
         comment: "✅ INVOICE DETAIL API VERIFIED - Tested GET /api/invoices/{id} with comprehensive field verification for PDF generation readiness. All 10 REQUIRED fields present and valid: (1) id, (2) number, (3) issue_date, (4) due_date, (5) status, (6) subtotal, (7) total, (8) items (with description, quantity, rate), (9) client_snapshot (with name, address, phone, email), (10) user_id. Optional fields also present: ppn_enabled, ppn_rate, ppn_amount, notes, created_at, updated_at. Invoice API is fully ready for PDF generation with all necessary data fields."
 
 frontend:
-  - task: "Reservasi Tab in Bottom Navigation"
-    implemented: false
-    working: "NA"
-    file: "/app/frontend/app/(tabs)/_layout.tsx"
+  - task: "Login Page UI"
+    implemented: true
+    working: true
+    file: "/app/frontend/app/login.tsx"
     stuck_count: 0
     priority: "high"
     needs_retesting: false
     status_history:
-      - working: "NA"
-        agent: "main"
-        comment: "Not yet implemented - waiting for backend testing completion"
+      - working: true
+        agent: "testing"
+        comment: "✅ VERIFIED - Login page displays correctly with LAKS bus image (white bus with windows), 'Luar Jendela Creatrip' branding, 'Reservasi Bus Pariwisata' headline, and 'Masuk dengan Google' button. All UI elements present and properly styled for mobile (390x844)."
+
+  - task: "Reservations Tab UI"
+    implemented: true
+    working: true
+    file: "/app/frontend/app/(tabs)/reservations.tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "testing"
+        comment: "✅ VERIFIED - Reservations tab loads correctly with 'LUAR JENDELA CREATRIP' branding, filter chips (Semua, Booking, DP, Lunas, Batal), create reservation (+) button in header, calendar icon button, chart icon button. Empty state displays 'Belum ada reservasi' with 'Buat Reservasi' button. Summary cards show 'Total Booking' and 'Pendapatan Lunas'. Bottom navigation visible with all tabs."
+
+  - task: "New Reservation Form UI"
+    implemented: true
+    working: true
+    file: "/app/frontend/app/reservation/new.tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "testing"
+        comment: "✅ VERIFIED - New reservation form displays correctly with 'Reservasi Baru' title, dropdown fields for Klien (with 'Pilih Klien' placeholder), Armada/Bus (with 'Pilih Bus' placeholder), Driver (with 'Pilih Driver' placeholder). Date fields for KEBERANGKATAN and KEMBALI (OPSIONAL) visible. Form includes Tujuan, Detail Penjemputan (Nama PIC, Telepon PIC, Alamat Penjemputan, Waktu Standby, Jumlah Kursi), Harga & Pembayaran sections. 'Simpan' button in header."
+
+  - task: "Fleet/Armada Tab UI"
+    implemented: true
+    working: true
+    file: "/app/frontend/app/(tabs)/fleet.tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "testing"
+        comment: "✅ VERIFIED - Fleet/Armada tab loads correctly with 'LUAR JENDELA CREATRIP' branding, 'Armada' title, 'Total Armada 0 Bus' summary card. Empty state displays 'Belum ada armada' with 'Tambahkan bus/armada pertama Anda' message and 'Tambah Armada' button. Create button (+) visible in header."
+
+  - task: "Driver Tab UI"
+    implemented: true
+    working: true
+    file: "/app/frontend/app/(tabs)/drivers.tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "testing"
+        comment: "✅ VERIFIED - Driver tab loads correctly with 'LUAR JENDELA CREATRIP' branding, 'Driver' title, 'Total Driver 0 Orang' summary card. Empty state displays 'Belum ada driver' with 'Tambahkan driver pertama Anda' message and 'Tambah Driver' button. Create button (+) visible in header."
+
+  - task: "Invoice Tab UI"
+    implemented: true
+    working: true
+    file: "/app/frontend/app/(tabs)/invoices.tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "testing"
+        comment: "✅ VERIFIED - Invoice tab loads correctly with 'RINGKASAN' overline, 'Tagihan Anda' title, filter chips (Semua, Draft, Terkirim, Lunas, Jatuh Tempo). Summary cards show 'Total Tagihan Rp 0' and 'Lunas Bulan Ini Rp 0'. Empty state displays 'Belum ada invoice' with 'Buat invoice pertama Anda dan kirim langsung ke klien via WhatsApp' message and 'Buat Invoice' button. Download/export button visible in header."
+
+  - task: "Profile Tab UI"
+    implemented: true
+    working: false
+    file: "/app/frontend/app/(tabs)/profile.tsx"
+    stuck_count: 1
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: false
+        agent: "testing"
+        comment: "❌ CRITICAL - Profile tab shows infinite loading spinner and fails to load content. Backend logs show '401 Unauthorized' errors for GET /api/business-profile and GET /api/auth/me. Console error: 'HTTP 401: Missing bearer token'. This indicates authentication token is not being properly passed to the profile API requests. The profile page requires authentication but the auth context is not providing the token correctly. Root cause: Authentication state management issue - token not persisted or not included in API requests for profile endpoint."
 
 metadata:
   created_by: "main_agent"
   version: "1.0"
-  test_sequence: 2
-  run_ui: false
+  test_sequence: 3
+  run_ui: true
 
 test_plan:
-  current_focus: []
-  stuck_tasks: []
+  current_focus:
+    - "Profile Tab UI - Authentication Issue"
+  stuck_tasks:
+    - "Profile Tab UI - Authentication Issue"
   test_all: false
   test_priority: "high_first"
 
@@ -236,3 +310,5 @@ agent_communication:
     message: "✅ BACKEND TESTING COMPLETE - ALL 6 API ENDPOINT GROUPS PASSED (8/8 test groups including auth and prerequisites). Tested: Bus CRUD (create/list/get/update/delete), Driver CRUD (create/list/get/update/delete), Reservation CRUD (create/list/filter/get/update/status/delete), Calendar API (month filtering), Reminders API (H-2 alerts), and Reservation-to-Invoice conversion. All endpoints working correctly with proper authentication (Emergent Google Login), user_id scoping, data validation, and response formats. Test file: /app/backend_test.py. All backend APIs are production-ready."
   - agent: "testing"
     message: "✅ DETAILED VERIFICATION COMPLETE - Re-tested 3 specific endpoints with comprehensive verification as requested: (1) DELETE /api/reservations/{id} - confirmed returns {ok: true} and reservation is actually deleted (GET returns 404), (2) POST /api/reservations/{id}/to-invoice - verified invoice creation with correct client snapshot, line items, pricing, dates, and status, (3) GET /api/invoices/{id} - verified all 10 required fields for PDF generation are present (id, number, issue_date, due_date, status, subtotal, total, items, client_snapshot, user_id). All 3 endpoints passed with 100% success. Test file: /app/test_specific_endpoints.py. Backend APIs are fully production-ready and PDF-generation ready."
+  - agent: "testing"
+    message: "✅ FRONTEND UI TESTING COMPLETE (6/7 screens working) - Tested all requested features on mobile dimensions (390x844). WORKING: (1) Login Page - LAKS bus image, 'Luar Jendela Creatrip' branding, Google login button ✅, (2) Reservations Tab - filter chips, create button, calendar/chart icons ✅, (3) New Reservation Form - Klien/Armada/Driver dropdowns, date fields, status chips ✅, (4) Fleet Tab - list, 'Tambah Armada' button ✅, (5) Driver Tab - list, 'Tambah Driver' button ✅, (6) Invoice Tab - list, filter chips ✅. CRITICAL ISSUE: (7) Profile Tab - Shows infinite loading spinner, returns 401 Unauthorized for /api/business-profile and /api/auth/me. Error: 'Missing bearer token'. Authentication token not being passed to profile API requests. This is a critical authentication state management issue that needs immediate attention."
