@@ -149,6 +149,9 @@ backend:
       - working: true
         agent: "testing"
         comment: "✅ ALL TESTS PASSED - Tested POST /api/reservations (create), GET /api/reservations (list all), GET /api/reservations?status=booked (filter by status), GET /api/reservations/{id} (get single), PUT /api/reservations/{id} (update), PATCH /api/reservations/{id}/status (update status), DELETE /api/reservations/{id} (delete). All endpoints working correctly. Pickup details (pic_name, pic_phone, address, standby_time, seat_capacity) properly stored. Client/bus/driver snapshots correctly captured. Status management (booked, downpayment, paid, cancel) working as expected."
+      - working: true
+        agent: "testing"
+        comment: "✅ DETAILED VERIFICATION PASSED - Re-tested DELETE /api/reservations/{id} with comprehensive verification: (1) Confirmed reservation exists before delete, (2) DELETE returns {ok: true} as expected, (3) Verified reservation is actually deleted by attempting GET which correctly returns 404. Delete operation working perfectly with proper cleanup."
 
   - task: "Reservation Calendar API"
     implemented: true
@@ -194,6 +197,12 @@ backend:
       - working: true
         agent: "testing"
         comment: "✅ ALL TESTS PASSED - Tested POST /api/reservations/{id}/to-invoice. Successfully converted reservation to invoice with auto-generated invoice number (INV/2026/06/0001). Invoice created with correct client snapshot, line items (bus rental description with destination and dates), pricing from reservation, and proper status. Invoice ID linked back to reservation. Verified invoice was created and accessible via GET /api/invoices/{id}."
+      - working: true
+        agent: "testing"
+        comment: "✅ DETAILED VERIFICATION PASSED - Re-tested POST /api/reservations/{id}/to-invoice with comprehensive verification: (1) Invoice created with correct auto-generated number (INV/2026/06/0002), (2) Client snapshot properly captured with name/address/phone/email, (3) Line items correctly generated with descriptive bus rental text including destination and dates, (4) Pricing accurate (subtotal: Rp 7,500,000, total: Rp 7,500,000), (5) Dates set properly (issue_date: 2026-06-16, due_date: 2026-06-23), (6) Status set to 'sent', (7) Invoice ID linked back to reservation. Conversion working perfectly."
+      - working: true
+        agent: "testing"
+        comment: "✅ INVOICE DETAIL API VERIFIED - Tested GET /api/invoices/{id} with comprehensive field verification for PDF generation readiness. All 10 REQUIRED fields present and valid: (1) id, (2) number, (3) issue_date, (4) due_date, (5) status, (6) subtotal, (7) total, (8) items (with description, quantity, rate), (9) client_snapshot (with name, address, phone, email), (10) user_id. Optional fields also present: ppn_enabled, ppn_rate, ppn_amount, notes, created_at, updated_at. Invoice API is fully ready for PDF generation with all necessary data fields."
 
 frontend:
   - task: "Reservasi Tab in Bottom Navigation"
@@ -225,3 +234,5 @@ agent_communication:
     message: "Backend implementation complete for Bus Reservation feature. All 6 new API endpoints implemented: 1) /api/buses CRUD, 2) /api/drivers CRUD, 3) /api/reservations CRUD with status management, 4) /api/reservations/calendar for calendar view, 5) /api/reservations/reminders for H-2 reminders, 6) /api/reservations/{id}/to-invoice for invoice conversion. Please test all endpoints with proper authentication."
   - agent: "testing"
     message: "✅ BACKEND TESTING COMPLETE - ALL 6 API ENDPOINT GROUPS PASSED (8/8 test groups including auth and prerequisites). Tested: Bus CRUD (create/list/get/update/delete), Driver CRUD (create/list/get/update/delete), Reservation CRUD (create/list/filter/get/update/status/delete), Calendar API (month filtering), Reminders API (H-2 alerts), and Reservation-to-Invoice conversion. All endpoints working correctly with proper authentication (Emergent Google Login), user_id scoping, data validation, and response formats. Test file: /app/backend_test.py. All backend APIs are production-ready."
+  - agent: "testing"
+    message: "✅ DETAILED VERIFICATION COMPLETE - Re-tested 3 specific endpoints with comprehensive verification as requested: (1) DELETE /api/reservations/{id} - confirmed returns {ok: true} and reservation is actually deleted (GET returns 404), (2) POST /api/reservations/{id}/to-invoice - verified invoice creation with correct client snapshot, line items, pricing, dates, and status, (3) GET /api/invoices/{id} - verified all 10 required fields for PDF generation are present (id, number, issue_date, due_date, status, subtotal, total, items, client_snapshot, user_id). All 3 endpoints passed with 100% success. Test file: /app/test_specific_endpoints.py. Backend APIs are fully production-ready and PDF-generation ready."
