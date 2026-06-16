@@ -1,9 +1,11 @@
-import { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
   KeyboardAvoidingView,
+  Modal,
   Platform,
+  Pressable,
   ScrollView,
   StyleSheet,
   Text,
@@ -17,8 +19,8 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import { api } from "@/src/api/client";
 import { colors } from "@/src/theme";
 import { DateField } from "@/src/components/DateField";
-import { todayISO, addDaysISO } from "@/src/utils/format";
-import { RESERVATION_STATUSES } from "@/src/utils/reservation";
+import { Dropdown } from "@/src/components/Dropdown";
+import { todayISO } from "@/src/utils/format";
 
 type PickupDetails = {
   pic_name: string;
@@ -60,7 +62,12 @@ export default function ReservationEditor() {
   const [buses, setBuses] = useState<any[]>([]);
   const [drivers, setDrivers] = useState<any[]>([]);
 
-  // Use date from calendar if provided, otherwise use today
+  // Quick add modals
+  const [addClientModal, setAddClientModal] = useState(false);
+  const [newClientName, setNewClientName] = useState("");
+  const [newClientPhone, setNewClientPhone] = useState("");
+  const [savingClient, setSavingClient] = useState(false);
+
   const initialDate = params.date || todayISO();
 
   const [form, setForm] = useState<ReservationForm>({
@@ -84,15 +91,24 @@ export default function ReservationEditor() {
   });
 
   // Load dropdown data
-  useEffect(() => {
-    Promise.all([api.listClients(), api.listBuses(), api.listDrivers()])
-      .then(([c, b, d]) => {
-        setClients(c);
-        setBuses(b);
-        setDrivers(d);
-      })
-      .catch(console.warn);
+  const loadData = useCallback(async () => {
+    try {
+      const [c, b, d] = await Promise.all([
+        api.listClients(),
+        api.listBuses(),
+        api.listDrivers(),
+      ]);
+      setClients(c);
+      setBuses(b);
+      setDrivers(d);
+    } catch (e) {
+      console.warn(e);
+    }
   }, []);
+
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
 
   // Load existing reservation
   useEffect(() => {
@@ -135,6 +151,32 @@ export default function ReservationEditor() {
       ...prev,
       pickup: { ...prev.pickup, [key]: value },
     }));
+
+  // Quick add client
+  const handleAddClient = async () => {
+    if (!newClientName.trim()) {
+      Alert.alert("Error", "Nama klien wajib diisi");
+      return;
+    }
+    setSavingClient(true);
+    try {
+      const newClient = await api.createClient({
+        name: newClientName.trim(),
+        phone: newClientPhone.trim(),
+        email: "",
+        address: "",
+      });
+      setClients((prev) => [...prev, newClient]);
+      updateField("client_id", newClient.id);
+      setAddClientModal(false);
+      setNewClientName("");
+      setNewClientPhone("");
+    } catch (e: any) {
+      Alert.alert("Error", e.message || "Gagal menambah klien");
+    } finally {
+      setSavingClient(false);
+    }
+  };
 
   const handleSave = async () => {
     if (!form.departure_date) {
@@ -187,6 +229,25 @@ export default function ReservationEditor() {
     );
   }
 
+  // Prepare dropdown items
+  const clientItems = clients.map((c) => ({
+    id: c.id,
+    label: c.name,
+    sublabel: c.phone || c.email || undefined,
+  }));
+
+  const busItems = buses.map((b) => ({
+    id: b.id,
+    label: b.name,
+    sublabel: `${b.capacity} kursi${b.plate_number ? ` • ${b.plate_number}` : ""}`,
+  }));
+
+  const driverItems = drivers.map((d) => ({
+    id: d.id,
+    label: d.name,
+    sublabel: d.phone || undefined,
+  }));
+
   return (
     <SafeAreaView style={styles.root} edges={["top"]}>
       <KeyboardAvoidingView
@@ -225,163 +286,49 @@ export default function ReservationEditor() {
           contentContainerStyle={styles.scrollContent}
           keyboardShouldPersistTaps="handled"
         >
-          {/* Client Selection */}
+          {/* Client Dropdown */}
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Klien</Text>
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.chipRow}
-            >
-              <TouchableOpacity
-                style={[
-                  styles.selectChip,
-                  !form.client_id && styles.selectChipActive,
-                ]}
-                onPress={() => updateField("client_id", "")}
-              >
-                <Text
-                  style={[
-                    styles.selectChipText,
-                    !form.client_id && styles.selectChipTextActive,
-                  ]}
-                >
-                  Tanpa Klien
-                </Text>
-              </TouchableOpacity>
-              {clients.map((c) => (
-                <TouchableOpacity
-                  key={c.id}
-                  style={[
-                    styles.selectChip,
-                    form.client_id === c.id && styles.selectChipActive,
-                  ]}
-                  onPress={() => updateField("client_id", c.id)}
-                >
-                  <Text
-                    style={[
-                      styles.selectChipText,
-                      form.client_id === c.id && styles.selectChipTextActive,
-                    ]}
-                    numberOfLines={1}
-                  >
-                    {c.name}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
+            <Dropdown
+              testID="client-dropdown"
+              label="Klien"
+              placeholder="Pilih Klien"
+              items={clientItems}
+              value={form.client_id}
+              onChange={(v) => updateField("client_id", v)}
+              onAdd={() => setAddClientModal(true)}
+              addLabel="Tambah Klien Baru"
+              emptyLabel="Tanpa Klien"
+            />
           </View>
 
-          {/* Bus Selection */}
+          {/* Bus Dropdown */}
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Armada</Text>
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.chipRow}
-            >
-              <TouchableOpacity
-                style={[
-                  styles.selectChip,
-                  !form.bus_id && styles.selectChipActive,
-                ]}
-                onPress={() => updateField("bus_id", "")}
-              >
-                <Text
-                  style={[
-                    styles.selectChipText,
-                    !form.bus_id && styles.selectChipTextActive,
-                  ]}
-                >
-                  Pilih Bus
-                </Text>
-              </TouchableOpacity>
-              {buses.map((b) => (
-                <TouchableOpacity
-                  key={b.id}
-                  style={[
-                    styles.selectChip,
-                    form.bus_id === b.id && styles.selectChipActive,
-                  ]}
-                  onPress={() => updateField("bus_id", b.id)}
-                >
-                  <Text
-                    style={[
-                      styles.selectChipText,
-                      form.bus_id === b.id && styles.selectChipTextActive,
-                    ]}
-                    numberOfLines={1}
-                  >
-                    {b.name} ({b.capacity})
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
-            {buses.length === 0 && (
-              <TouchableOpacity
-                style={styles.addLink}
-                onPress={() => router.push("/(tabs)/fleet")}
-              >
-                <Feather name="plus" size={14} color={colors.primary} />
-                <Text style={styles.addLinkText}>Tambah Armada</Text>
-              </TouchableOpacity>
-            )}
+            <Dropdown
+              testID="bus-dropdown"
+              label="Armada / Bus"
+              placeholder="Pilih Bus"
+              items={busItems}
+              value={form.bus_id}
+              onChange={(v) => updateField("bus_id", v)}
+              onAdd={() => router.push("/(tabs)/fleet")}
+              addLabel="Tambah Armada"
+              emptyLabel="Belum Pilih Bus"
+            />
           </View>
 
-          {/* Driver Selection */}
+          {/* Driver Dropdown */}
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Driver</Text>
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.chipRow}
-            >
-              <TouchableOpacity
-                style={[
-                  styles.selectChip,
-                  !form.driver_id && styles.selectChipActive,
-                ]}
-                onPress={() => updateField("driver_id", "")}
-              >
-                <Text
-                  style={[
-                    styles.selectChipText,
-                    !form.driver_id && styles.selectChipTextActive,
-                  ]}
-                >
-                  Pilih Driver
-                </Text>
-              </TouchableOpacity>
-              {drivers.map((d) => (
-                <TouchableOpacity
-                  key={d.id}
-                  style={[
-                    styles.selectChip,
-                    form.driver_id === d.id && styles.selectChipActive,
-                  ]}
-                  onPress={() => updateField("driver_id", d.id)}
-                >
-                  <Text
-                    style={[
-                      styles.selectChipText,
-                      form.driver_id === d.id && styles.selectChipTextActive,
-                    ]}
-                    numberOfLines={1}
-                  >
-                    {d.name}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
-            {drivers.length === 0 && (
-              <TouchableOpacity
-                style={styles.addLink}
-                onPress={() => router.push("/(tabs)/drivers")}
-              >
-                <Feather name="plus" size={14} color={colors.primary} />
-                <Text style={styles.addLinkText}>Tambah Driver</Text>
-              </TouchableOpacity>
-            )}
+            <Dropdown
+              testID="driver-dropdown"
+              label="Driver"
+              placeholder="Pilih Driver"
+              items={driverItems}
+              value={form.driver_id}
+              onChange={(v) => updateField("driver_id", v)}
+              onAdd={() => router.push("/(tabs)/drivers")}
+              addLabel="Tambah Driver"
+              emptyLabel="Belum Pilih Driver"
+            />
           </View>
 
           {/* Dates */}
@@ -557,6 +504,59 @@ export default function ReservationEditor() {
           <View style={{ height: 40 }} />
         </ScrollView>
       </KeyboardAvoidingView>
+
+      {/* Quick Add Client Modal */}
+      <Modal
+        visible={addClientModal}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setAddClientModal(false)}
+      >
+        <Pressable
+          style={styles.modalBackdrop}
+          onPress={() => setAddClientModal(false)}
+        />
+        <View style={styles.modalSheet}>
+          <View style={styles.modalHandle} />
+          <Text style={styles.modalTitle}>Tambah Klien Baru</Text>
+
+          <View style={styles.modalField}>
+            <Text style={styles.modalFieldLabel}>Nama Klien *</Text>
+            <TextInput
+              style={styles.modalInput}
+              placeholder="Nama lengkap"
+              placeholderTextColor={colors.textMute}
+              value={newClientName}
+              onChangeText={setNewClientName}
+            />
+          </View>
+
+          <View style={styles.modalField}>
+            <Text style={styles.modalFieldLabel}>Nomor Telepon</Text>
+            <TextInput
+              style={styles.modalInput}
+              placeholder="08xxxxxxxxxx"
+              placeholderTextColor={colors.textMute}
+              keyboardType="phone-pad"
+              value={newClientPhone}
+              onChangeText={setNewClientPhone}
+            />
+          </View>
+
+          <TouchableOpacity
+            style={styles.modalSaveBtn}
+            onPress={handleAddClient}
+            disabled={savingClient}
+            activeOpacity={0.85}
+          >
+            {savingClient ? (
+              <ActivityIndicator color="#fff" />
+            ) : (
+              <Text style={styles.modalSaveBtnText}>Simpan Klien</Text>
+            )}
+          </TouchableOpacity>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -601,49 +601,13 @@ const styles = StyleSheet.create({
   scroll: { flex: 1 },
   scrollContent: { padding: 20 },
   section: {
-    marginBottom: 24,
+    marginBottom: 20,
   },
   sectionTitle: {
     fontSize: 14,
     fontWeight: "700",
     color: colors.text,
     marginBottom: 12,
-  },
-  chipRow: {
-    flexDirection: "row",
-    gap: 8,
-    paddingRight: 20,
-  },
-  selectChip: {
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    borderRadius: 10,
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  selectChipActive: {
-    backgroundColor: colors.primary,
-    borderColor: colors.primary,
-  },
-  selectChipText: {
-    fontSize: 13,
-    fontWeight: "600",
-    color: colors.textMid,
-  },
-  selectChipTextActive: {
-    color: "#fff",
-  },
-  addLink: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-    marginTop: 10,
-  },
-  addLinkText: {
-    fontSize: 13,
-    fontWeight: "600",
-    color: colors.primary,
   },
   dateRow: {
     flexDirection: "row",
@@ -700,5 +664,67 @@ const styles = StyleSheet.create({
   },
   statusChipTextActive: {
     color: "#fff",
+  },
+  // Modal styles
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.5)",
+  },
+  modalSheet: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: colors.surface,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    padding: 24,
+    paddingBottom: 40,
+  },
+  modalHandle: {
+    width: 40,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: colors.border,
+    alignSelf: "center",
+    marginBottom: 20,
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: "700",
+    color: colors.text,
+    marginBottom: 20,
+  },
+  modalField: {
+    marginBottom: 16,
+  },
+  modalFieldLabel: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: colors.textMid,
+    marginBottom: 8,
+  },
+  modalInput: {
+    backgroundColor: colors.bg,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    fontSize: 15,
+    color: colors.text,
+  },
+  modalSaveBtn: {
+    backgroundColor: colors.primary,
+    height: 50,
+    borderRadius: 14,
+    alignItems: "center",
+    justifyContent: "center",
+    marginTop: 8,
+  },
+  modalSaveBtnText: {
+    color: "#fff",
+    fontSize: 15,
+    fontWeight: "700",
   },
 });
